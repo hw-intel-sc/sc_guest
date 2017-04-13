@@ -377,6 +377,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 
 	account_kernel_stack(ti, 1);
 
+#ifdef CONFIG_SC_GUEST
+	tsk->ept_viewid = orig->ept_viewid;
+#endif
+
 	return tsk;
 
 free_ti:

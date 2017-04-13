@@ -23,6 +23,31 @@
 #define flush_cache_vmap(start, end)		do { } while (0)
 #define flush_cache_vunmap(start, end)		do { } while (0)
 
+#ifdef CONFIG_SC_GUEST
+#include <asm/sc.h>
+
+#define copy_to_user_page(vma, page, vaddr, dst, src, len) \
+({				\
+	struct data_ex_cfg cfg;					\
+	cfg.mov_src = __pa((uint64_t)src);		\
+	cfg.mov_dst = uvirt_to_phys((const void*)dst, 1); \
+	cfg.mov_size = len;				\
+	cfg.op = SC_DATA_EXCHG_MOV;		\
+	sc_guest_exchange_data(&cfg);		\
+})
+
+#define copy_from_user_page(vma, page, vaddr, dst, src, len) \
+({				\
+	struct data_ex_cfg cfg;					\
+	cfg.mov_src = uvirt_to_phys((const void*)src, 0);		\
+	cfg.mov_dst = __pa((uint64_t)dst); \
+	cfg.mov_size = len;				\
+	cfg.op = SC_DATA_EXCHG_MOV;		\
+	sc_guest_exchange_data(&cfg);		\
+})
+
+#else
+
 #define copy_to_user_page(vma, page, vaddr, dst, src, len) \
 	do { \
 		memcpy(dst, src, len); \
@@ -30,5 +55,7 @@
 	} while (0)
 #define copy_from_user_page(vma, page, vaddr, dst, src, len) \
 	memcpy(dst, src, len)
+
+#endif
 
 #endif /* __ASM_CACHEFLUSH_H */

@@ -10,6 +10,9 @@
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
 #include <asm/page.h>
+//#include <linux/module.h>
+//#include <linux/vmalloc.h>
+//#include <linux/mm.h>
 
 /*
  * Copy To/From Userspace
@@ -23,6 +26,58 @@ copy_user_generic_string(void *to, const void *from, unsigned len);
 __must_check unsigned long
 copy_user_generic_unrolled(void *to, const void *from, unsigned len);
 
+#ifdef CONFIG_SC_GUEST
+#include <asm/sc.h>
+
+static __always_inline __must_check unsigned long
+copy_user_generic(void *to, const void *from, unsigned len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if( likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret;
+}
+#else
 static __always_inline __must_check unsigned long
 copy_user_generic(void *to, const void *from, unsigned len)
 {
@@ -44,10 +99,60 @@ copy_user_generic(void *to, const void *from, unsigned len)
 			 : "memory", "rcx", "r8", "r9", "r10", "r11");
 	return ret;
 }
+#endif
 
 __must_check unsigned long
 copy_in_user(void __user *to, const void __user *from, unsigned len);
 
+#ifdef CONFIG_SC_GUEST
+static __always_inline __must_check
+int __copy_from_user_nocheck(void *to, const void __user *from, unsigned len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if (likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+	return ret;
+}
+#else
 static __always_inline __must_check
 int __copy_from_user_nocheck(void *dst, const void __user *src, unsigned size)
 {
@@ -90,6 +195,7 @@ int __copy_from_user_nocheck(void *dst, const void __user *src, unsigned size)
 		return copy_user_generic(dst, (__force void *)src, size);
 	}
 }
+#endif
 
 static __always_inline __must_check
 int __copy_from_user(void *dst, const void __user *src, unsigned size)
@@ -97,6 +203,57 @@ int __copy_from_user(void *dst, const void __user *src, unsigned size)
 	might_fault();
 	return __copy_from_user_nocheck(dst, src, size);
 }
+
+#ifdef CONFIG_SC_GUEST
+static __always_inline __must_check
+int __copy_to_user_nocheck(void __user *to, const void *from, unsigned len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if( likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret;
+}
+#else
 
 static __always_inline __must_check
 int __copy_to_user_nocheck(void __user *dst, const void *src, unsigned size)
@@ -140,6 +297,7 @@ int __copy_to_user_nocheck(void __user *dst, const void *src, unsigned size)
 		return copy_user_generic((__force void *)dst, src, size);
 	}
 }
+#endif
 
 static __always_inline __must_check
 int __copy_to_user(void __user *dst, const void *src, unsigned size)
@@ -148,6 +306,56 @@ int __copy_to_user(void __user *dst, const void *src, unsigned size)
 	return __copy_to_user_nocheck(dst, src, size);
 }
 
+#ifdef CONFIG_SC_GUEST
+static __always_inline __must_check
+int __copy_in_user(void __user *to, const void __user *from, unsigned len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if (likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret;
+}
+#else
 static __always_inline __must_check
 int __copy_in_user(void __user *dst, const void __user *src, unsigned size)
 {
@@ -200,6 +408,7 @@ int __copy_in_user(void __user *dst, const void __user *src, unsigned size)
 					 (__force void *)src, size);
 	}
 }
+#endif
 
 static __must_check __always_inline int
 __copy_from_user_inatomic(void *dst, const void __user *src, unsigned size)
@@ -216,6 +425,106 @@ __copy_to_user_inatomic(void __user *dst, const void *src, unsigned size)
 extern long __copy_user_nocache(void *dst, const void __user *src,
 				unsigned size, int zerorest);
 
+#ifdef CONFIG_SC_GUEST
+static inline int
+__copy_from_user_nocache(void *to, const void __user *from, unsigned len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if (likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret;
+}
+
+static inline int
+__copy_from_user_inatomic_nocache(void *to, const void __user *from,
+				  unsigned len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if (likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret;
+}
+#else
 static inline int
 __copy_from_user_nocache(void *dst, const void __user *src, unsigned size)
 {
@@ -229,6 +538,7 @@ __copy_from_user_inatomic_nocache(void *dst, const void __user *src,
 {
 	return __copy_user_nocache(dst, src, size, 0);
 }
+#endif
 
 unsigned long
 copy_user_handle_tail(char *to, char *from, unsigned len);

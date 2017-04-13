@@ -60,6 +60,9 @@
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
 #include <asm/tlb.h>
+#ifdef CONFIG_SC_GUEST
+#include <asm/sc.h>
+#endif
 
 #include <trace/events/task.h>
 #include "internal.h"
@@ -476,6 +479,11 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 		ret = -E2BIG;
 		if (!valid_arg_len(bprm, len))
 			goto out;
+
+#ifdef CONFIG_SC_GUEST
+		if (!is_sc(current))
+			sc_guest_check_exec_env(str);
+#endif
 
 		/* We're going to work our way backwords. */
 		pos = bprm->p;
@@ -1584,6 +1592,19 @@ static int do_execveat_common(int fd, struct filename *filename,
 	retval = exec_binprm(bprm);
 	if (retval < 0)
 		goto out;
+
+#ifdef CONFIG_SC_GUEST
+	if (task_tgid_vnr(current) == 1 && current->pid != 1) {
+		int err = sc_guest_create_view();
+		if (!err) {
+			printk(KERN_INFO "SC_GUEST: sc guest create view successfully, view id = %d!\n",
+					current->ept_viewid);
+		}
+		else if (err != -ENOSYS) {
+			printk(KERN_ERR "SC_GUEST: sc guest create view failed!\n");
+		}
+	}
+#endif
 
 	/* execve succeeded */
 	current->fs->in_exec = 0;

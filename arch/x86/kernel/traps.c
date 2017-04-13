@@ -493,6 +493,7 @@ do_general_protection(struct pt_regs *regs, long error_code)
 	}
 
 	force_sig_info(SIGSEGV, SEND_SIG_PRIV, tsk);
+
 exit:
 	exception_exit(prev_state);
 }

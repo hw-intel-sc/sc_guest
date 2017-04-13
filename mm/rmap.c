@@ -1056,8 +1056,9 @@ void do_page_add_anon_rmap(struct page *page,
 	/* address might be in next vma when migration races vma_adjust */
 	if (first)
 		__page_set_anon_rmap(page, vma, address, exclusive);
-	else
+	else {
 		__page_check_anon_rmap(page, vma, address);
+	}
 }
 
 /**
@@ -1098,6 +1099,7 @@ void page_add_file_rmap(struct page *page)
 		__inc_zone_page_state(page, NR_FILE_MAPPED);
 		mem_cgroup_inc_page_stat(memcg, MEM_CGROUP_STAT_FILE_MAPPED);
 	}
+
 	mem_cgroup_end_page_stat(memcg);
 }
 

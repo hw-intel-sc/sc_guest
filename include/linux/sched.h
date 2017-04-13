@@ -1392,6 +1392,9 @@ struct task_struct {
 
 	struct restart_block restart_block;
 
+#ifdef CONFIG_SC_GUEST
+	unsigned int ept_viewid;
+#endif
 	pid_t pid;
 	pid_t tgid;
 

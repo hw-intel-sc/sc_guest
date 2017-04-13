@@ -170,6 +170,28 @@ __typeof__(__builtin_choose_expr(sizeof(x) > sizeof(0UL), 0ULL, 0UL))
  * Clang/LLVM cares about the size of the register, but still wants
  * the base register for something that ends up being a pair.
  */
+#ifdef CONFIG_SC_GUEST
+#include <asm/sc.h>
+
+#define get_user(x, ptr)						\
+({							\
+	int __ret_gu;							\
+	struct data_ex_cfg ex_cfg;		\
+	__inttype(*(ptr)) __val_gu = 0;			\
+	phys_addr_t gpa;			\
+	__chk_user_ptr(ptr);						\
+	might_fault();							\
+	gpa = uvirt_to_phys((const volatile void *)(ptr), 0);	\
+	ex_cfg.mov_src = gpa;					\
+	ex_cfg.mov_dst = __pa((uint64_t)&__val_gu);			\
+	ex_cfg.mov_size = sizeof(*(ptr));		\
+	ex_cfg.op = SC_DATA_EXCHG_MOV;		\
+	__ret_gu = sc_guest_exchange_data(&ex_cfg);				\
+	(x) = (__force __typeof__(*(ptr))) __val_gu;			\
+	__ret_gu;							\
+})
+#else
+
 #define get_user(x, ptr)						\
 ({									\
 	int __ret_gu;							\
@@ -182,6 +204,7 @@ __typeof__(__builtin_choose_expr(sizeof(x) > sizeof(0UL), 0ULL, 0UL))
 	(x) = (__force __typeof__(*(ptr))) __val_gu;			\
 	__ret_gu;							\
 })
+#endif
 
 #define __put_user_x(size, x, ptr, __ret_pu)			\
 	asm volatile("call __put_user_" #size : "=a" (__ret_pu)	\
@@ -251,6 +274,26 @@ extern void __put_user_8(void);
  *
  * Returns zero on success, or -EFAULT on error.
  */
+#ifdef CONFIG_SC_GUEST
+#define put_user(x, ptr)						\
+({							\
+	int __ret_pu;		\
+	struct data_ex_cfg ex_cfg;		\
+	phys_addr_t gpa;			\
+	__typeof__(*(ptr)) __pu_val;				\
+	__chk_user_ptr(ptr);						\
+	might_fault();							\
+	__pu_val = x;						\
+	gpa = uvirt_to_phys((const volatile void*)(ptr), 1);	\
+	ex_cfg.mov_dst = gpa;					\
+	ex_cfg.mov_src = __pa((uint64_t)&__pu_val);			\
+	ex_cfg.mov_size = sizeof(*(ptr));		\
+	ex_cfg.op = SC_DATA_EXCHG_MOV;		\
+	__ret_pu = sc_guest_exchange_data(&ex_cfg);				\
+	__ret_pu;		\
+})
+#else
+
 #define put_user(x, ptr)					\
 ({								\
 	int __ret_pu;						\
@@ -277,6 +320,7 @@ extern void __put_user_8(void);
 	}							\
 	__ret_pu;						\
 })
+#endif
 
 #define __put_user_size(x, ptr, size, retval, errret)			\
 do {									\
@@ -301,6 +345,31 @@ do {									\
 	}								\
 } while (0)
 
+#ifdef CONFIG_SC_GUEST
+#define __put_user_size_ex(x, ptr, size)				\
+({								\
+	struct data_ex_cfg ex_cfg;		\
+	__typeof__(*(ptr)) __pu_val;				\
+	phys_addr_t pa;			\
+	__chk_user_ptr(ptr);						\
+	switch (size) {				\
+		case 1:					\
+		case 2:					\
+		case 4:				\
+		case 8:				\
+			__pu_val = (x);			\
+			pa = uvirt_to_phys((const volatile void *)(ptr), 1);  \
+			ex_cfg.mov_src = __pa((uint64_t)&__pu_val);	\
+			ex_cfg.mov_dst = pa;					\
+			ex_cfg.mov_size = size;				\
+			ex_cfg.op = SC_DATA_EXCHG_MOV;		\
+			sc_guest_exchange_data(&ex_cfg);	\
+		break;						\
+		default:					\
+			__put_user_bad();		\
+	}				\
+})
+#else
 #define __put_user_size_ex(x, ptr, size)				\
 do {									\
 	__chk_user_ptr(ptr);						\
@@ -321,6 +390,7 @@ do {									\
 		__put_user_bad();					\
 	}								\
 } while (0)
+#endif
 
 #ifdef CONFIG_X86_32
 #define __get_user_asm_u64(x, ptr, retval, errret)	(x) = __get_user_bad()
@@ -398,12 +468,47 @@ do {									\
 		     _ASM_EXTABLE_EX(1b, 3b)				\
 		     : ltype(x) : "m" (__m(addr)))
 
+#ifdef CONFIG_SC_GUEST
+#define __put_user_nocheck(x, ptr, size)			\
+({								\
+	struct data_ex_cfg ex_cfg;		\
+	int __pu_err;						\
+	unsigned long __pu_val;				\
+	phys_addr_t pa;			\
+	__pu_val = (unsigned long)x;		\
+	pa = uvirt_to_phys((const volatile void *)(ptr), 1);  \
+	ex_cfg.mov_src = __pa((unsigned long)(&(__pu_val)));					\
+	ex_cfg.mov_dst = (uint64_t)pa;					\
+	ex_cfg.mov_size = size;				\
+	ex_cfg.op = SC_DATA_EXCHG_MOV;			\
+	__pu_err = sc_guest_exchange_data(&ex_cfg);	\
+	__pu_err;			\
+ })
+
+#define __get_user_nocheck(x, ptr, size)	\
+({								\
+	struct data_ex_cfg ex_cfg;		\
+	unsigned long __gu_val;				\
+	int __gu_err;							\
+	phys_addr_t pa;			\
+	pa = uvirt_to_phys((const volatile void *)(ptr), 0);  \
+	ex_cfg.mov_src = (uint64_t)pa;					\
+	ex_cfg.mov_dst = __pa((unsigned long)(&(__gu_val)));					\
+	ex_cfg.mov_size = size;				\
+	ex_cfg.op = SC_DATA_EXCHG_MOV;		\
+	__gu_err = sc_guest_exchange_data(&ex_cfg);	\
+	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
+	__gu_err;				\
+ })
+#else
+
 #define __put_user_nocheck(x, ptr, size)			\
 ({								\
 	int __pu_err;						\
 	__put_user_size((x), (ptr), (size), __pu_err, -EFAULT);	\
 	__pu_err;						\
 })
+
 
 #define __get_user_nocheck(x, ptr, size)				\
 ({									\
@@ -413,6 +518,7 @@ do {									\
 	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
 	__gu_err;							\
 })
+#endif
 
 /* FIXME: this hack is definitely wrong -AK */
 struct __large_struct { unsigned long buf[100]; };
@@ -514,11 +620,28 @@ struct __large_struct { unsigned long buf[100]; };
 #define get_user_try		uaccess_try
 #define get_user_catch(err)	uaccess_catch(err)
 
+#ifdef CONFIG_SC_GUEST
+#define get_user_ex(x, ptr)	\
+({								\
+	struct data_ex_cfg ex_cfg;		\
+	phys_addr_t pa;			\
+	unsigned long __gue_val;					\
+	pa = uvirt_to_phys((const volatile void *)(ptr), 0);  \
+	ex_cfg.mov_src = pa;					\
+	ex_cfg.mov_dst = __pa(&__gue_val);		\
+	ex_cfg.mov_size = sizeof(*(ptr));		\
+	ex_cfg.op = SC_DATA_EXCHG_MOV;			\
+	sc_guest_exchange_data(&ex_cfg);	\
+	(x) = (__force __typeof__(*(ptr)))__gue_val;			\
+ })
+
+#else
 #define get_user_ex(x, ptr)	do {					\
 	unsigned long __gue_val;					\
 	__get_user_size_ex((__gue_val), (ptr), (sizeof(*(ptr))));	\
 	(x) = (__force __typeof__(*(ptr)))__gue_val;			\
 } while (0)
+#endif
 
 #define put_user_try		uaccess_try
 #define put_user_catch(err)	uaccess_catch(err)
@@ -540,6 +663,32 @@ unsigned long __must_check __clear_user(void __user *mem, unsigned long len);
 extern void __cmpxchg_wrong_size(void)
 	__compiletime_error("Bad argument size for cmpxchg");
 
+/**
+ * when first called from futex_detect_cmpxchg for cmpxchg function check,
+ * mm struct is even not constructed.
+ **/
+#ifdef CONFIG_SC_GUEST
+#define __user_atomic_cmpxchg_inatomic(uval, ptr, old, new, size)	\
+({									\
+	int __ret = 0;							\
+	__typeof__(ptr) __uval = (uval);			\
+	__typeof__(*(ptr)) __old = (old);			\
+	struct data_ex_cfg cfg;						\
+	if (ptr) {									\
+		cfg.cmpxchg_ptr1 = __pa((unsigned long)&__old);					\
+		cfg.cmpxchg_ptr2 = uvirt_to_phys((const volatile void *)(ptr), 1);  \
+		cfg.cmpxchg_new= (uint64_t)(new);						\
+		cfg.cmpxchg_size = size;					\
+		cfg.op = SC_DATA_EXCHG_CMPXCHG;				\
+		__ret = sc_guest_exchange_data(&cfg);		\
+		*__uval = __old;					\
+	} else {								\
+		__ret = -EFAULT;							\
+	}										\
+	__ret;								\
+})
+
+#else
 #define __user_atomic_cmpxchg_inatomic(uval, ptr, old, new, size)	\
 ({									\
 	int __ret = 0;							\
@@ -620,6 +769,7 @@ extern void __cmpxchg_wrong_size(void)
 	*__uval = __old;						\
 	__ret;								\
 })
+#endif
 
 #define user_atomic_cmpxchg_inatomic(uval, ptr, old, new)		\
 ({									\
@@ -688,6 +838,106 @@ __copy_from_user_overflow(int size, unsigned long count)
 
 #endif
 
+#ifdef CONFIG_SC_GUEST
+static inline unsigned long __must_check
+copy_from_user(void *to, const void __user *from, unsigned long len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if (likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret;
+}
+
+static inline unsigned long __must_check
+copy_to_user(void __user *to, const void *from, unsigned long len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if (likely(left2 >= size)) {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = size;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		} else {
+			cfg.mov_src = uvirt_to_phys((void *)src, 0);
+			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
+			cfg.mov_size = left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+
+			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
+			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
+			cfg.mov_size = size - left2;
+			cfg.op = SC_DATA_EXCHG_MOV;
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret;
+}
+#else
+
 static inline unsigned long __must_check
 copy_from_user(void *to, const void __user *from, unsigned long n)
 {
@@ -740,6 +990,7 @@ copy_to_user(void __user *to, const void *from, unsigned long n)
 
 	return n;
 }
+#endif
 
 #undef __copy_from_user_overflow
 #undef __copy_to_user_overflow

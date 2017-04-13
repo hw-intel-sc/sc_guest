@@ -577,6 +577,9 @@ static int __add_to_page_cache_locked(struct page *page,
 		goto err_insert;
 	__inc_zone_page_state(page, NR_FILE_PAGES);
 	spin_unlock_irq(&mapping->tree_lock);
+#ifdef CONFIG_SC_GUEST
+	sc_guest_share_page(page);
+#endif
 	if (!huge)
 		mem_cgroup_commit_charge(page, memcg, false);
 	trace_mm_filemap_add_to_page_cache(page);

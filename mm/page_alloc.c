@@ -831,6 +831,9 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 	}
 	arch_free_page(page, order);
 	kernel_map_pages(page, 1 << order, 0);
+#ifdef CONFIG_SC_GUEST
+	i = sc_guest_free_page(page, 1 << order);
+#endif
 
 	return true;
 }

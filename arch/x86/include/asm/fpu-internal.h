@@ -179,6 +179,90 @@ static inline void sanitize_i387_state(struct task_struct *tsk)
 	err;								\
 })
 
+#ifdef CONFIG_SC_GUEST
+#include <asm/sc.h>
+static inline int fsave_user(struct i387_fsave_struct __user *fx)
+{
+	void *buf;
+	int size, off;
+	struct i387_fsave_struct *kfx;
+	struct data_ex_cfg cfg;
+	int ret = 0;
+	phys_addr_t gpa = uvirt_to_phys(fx, 1);
+
+	// fxsave and store require 16 byte align
+	size = sizeof(struct i387_fxsave_struct) + 15;
+	buf = kmalloc(size, GFP_KERNEL);
+	off = ((unsigned long)buf) & 0xF;
+	kfx = (struct i387_fsave_struct *)((unsigned long)buf + ((off == 0)? 0 : (0x10 - off)));
+
+	ret = user_insn(fnsave %[fx]; fwait,  [fx] "=m" (*kfx), "m" (*kfx));
+	/*
+	   asm volatile("fnsave %[fx]; fwait"
+			: [fx] "=m" (*kfx));
+	*/
+	if (ret) {
+		kfree(buf);
+		printk(KERN_ERR "### %s -- user_insn failed -- \n",__func__);
+		return ret;
+	}
+
+	cfg.mov_src = __pa((uint64_t)kfx);
+	cfg.mov_dst = gpa;
+	cfg.mov_size = sizeof(struct i387_fsave_struct);
+	cfg.op = SC_DATA_EXCHG_MOV;
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+	}
+	kfree(buf);
+	return ret;
+}
+
+static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
+{
+	void *buf;
+	int size, off;
+	struct i387_fsave_struct *kfx;
+	struct data_ex_cfg cfg;
+	int ret = 0;
+	phys_addr_t gpa = uvirt_to_phys(fx, 1);
+
+	// fxsave and store require 16 byte align
+	size = sizeof(struct i387_fxsave_struct) + 15;
+	buf = kmalloc(size, GFP_KERNEL);
+	off = ((unsigned long)buf) & 0xF;
+	kfx = (struct i387_fsave_struct *)((unsigned long)buf + ((off == 0)? 0 : (0x10 - off)));
+
+	if (config_enabled(CONFIG_X86_32)) {
+		asm volatile( "fxsave %[fx]" : [fx] "=m" (*kfx));
+		//ret = user_insn(fxsave %[fx], [fx] "=m" (*fx), "m" (*fx));
+	}
+	else if (config_enabled(CONFIG_AS_FXSAVEQ)) {
+		//ret = user_insn(fxsaveq %[fx], [fx] "=m" (*fx), "m" (*fx));
+		asm volatile("fxsaveq %[fx]" : [fx] "=m" (*kfx));
+	}
+	else {
+		asm volatile( "rex64/fxsave (%[fx])"
+			     : "=m" (*kfx)
+			     : [fx] "R" (fx));
+		//ret = user_insn(rex64/fxsave (%[fx]), "=m" (*fx), [fx] "R" (fx));
+	}
+
+	cfg.mov_src = __pa((uint64_t)kfx);
+	cfg.mov_dst = gpa;
+	cfg.mov_size = sizeof(struct i387_fsave_struct);
+	cfg.op = SC_DATA_EXCHG_MOV;
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+	}
+
+	kfree(buf);
+	return ret;
+}
+#else
+
 static inline int fsave_user(struct i387_fsave_struct __user *fx)
 {
 	return user_insn(fnsave %[fx]; fwait,  [fx] "=m" (*fx), "m" (*fx));
@@ -194,6 +278,7 @@ static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
 	/* See comment in fpu_fxsave() below. */
 	return user_insn(rex64/fxsave (%[fx]), "=m" (*fx), [fx] "R" (fx));
 }
+#endif
 
 static inline int fxrstor_checking(struct i387_fxsave_struct *fx)
 {
@@ -207,6 +292,45 @@ static inline int fxrstor_checking(struct i387_fxsave_struct *fx)
 			  "m" (*fx));
 }
 
+#ifdef CONFIG_SC_GUEST
+static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
+{
+	void *buf;
+	int size, off;
+	struct i387_fsave_struct *kfx;
+	struct data_ex_cfg cfg;
+	int ret = 0;
+	phys_addr_t gpa = uvirt_to_phys(fx, 1);
+
+	// fxsave and store require 16 byte align
+	size = sizeof(struct i387_fxsave_struct) + 15;
+	buf = kmalloc(size, GFP_KERNEL);
+	off = ((unsigned long)buf) & 0xF;
+	kfx = (struct i387_fsave_struct *)((unsigned long)buf + ((off == 0)? 0 : (0x10 - off)));
+
+	cfg.mov_src = gpa;
+	cfg.mov_dst = __pa((uint64_t)kfx);
+	cfg.mov_size = sizeof(struct i387_fsave_struct);
+	cfg.op = SC_DATA_EXCHG_MOV;
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		kfree(buf);
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+		return ret;
+	}
+
+	if (config_enabled(CONFIG_X86_32))
+		ret = user_insn(fxrstor %[fx], "=m" (*kfx), [fx] "m" (*kfx));
+	else if (config_enabled(CONFIG_AS_FXSAVEQ))
+		ret = user_insn(fxrstorq %[fx], "=m" (*kfx), [fx] "m" (*kfx));
+	else
+		/* See comment in fpu_fxsave() below. */
+		ret = user_insn(rex64/fxrstor (%[fx]), "=m" (*kfx), [fx] "R" (kfx),
+				"m" (*kfx));
+	kfree(buf);
+	return ret;
+}
+#else
 static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
 {
 	if (config_enabled(CONFIG_X86_32))
@@ -218,16 +342,50 @@ static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
 	return user_insn(rex64/fxrstor (%[fx]), "=m" (*fx), [fx] "R" (fx),
 			  "m" (*fx));
 }
+#endif
 
 static inline int frstor_checking(struct i387_fsave_struct *fx)
 {
 	return check_insn(frstor %[fx], "=m" (*fx), [fx] "m" (*fx));
 }
 
+#ifdef CONFIG_SC_GUEST
+static inline int frstor_user(struct i387_fsave_struct __user *fx)
+{
+	void *buf;
+	int size, off;
+	struct i387_fsave_struct *kfx;
+	struct data_ex_cfg cfg;
+	int ret;
+	phys_addr_t gpa = uvirt_to_phys(fx, 1);
+
+	// fxsave and store require 16 byte align
+	size = sizeof(struct i387_fxsave_struct) + 15;
+	buf = kmalloc(size, GFP_KERNEL);
+	off = ((unsigned long)buf) & 0xF;
+	kfx = (struct i387_fsave_struct *)((unsigned long)buf + ((off == 0)? 0 : (0x10 - off)));
+
+	cfg.mov_src = gpa;
+	cfg.mov_dst = __pa((uint64_t)kfx);
+	cfg.mov_size = sizeof(struct i387_fsave_struct);
+	cfg.op = SC_DATA_EXCHG_MOV;
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		kfree(buf);
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+		return ret;
+	}
+
+	ret = user_insn(frstor %[fx], "=m" (*kfx), [fx] "m" (*kfx));
+	kfree(buf);
+	return ret;
+}
+#else
 static inline int frstor_user(struct i387_fsave_struct __user *fx)
 {
 	return user_insn(frstor %[fx], "=m" (*fx), [fx] "m" (*fx));
 }
+#endif
 
 static inline void fpu_fxsave(struct fpu *fpu)
 {

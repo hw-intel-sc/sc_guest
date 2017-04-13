@@ -21,6 +21,24 @@ struct page;
 extern struct range pfn_mapped[];
 extern int nr_pfn_mapped;
 
+#ifdef CONFIG_SC_GUEST
+extern void sc_clear_user_page(void *page, unsigned long vaddr,
+				   struct page *pg);
+extern void sc_copy_user_page(void *to, void *from, unsigned long vaddr,
+				  struct page *topage);
+
+static inline void clear_user_page(void *page, unsigned long vaddr,
+				   struct page *pg)
+{
+	sc_clear_user_page(page, vaddr, pg);
+}
+
+static inline void copy_user_page(void *to, void *from, unsigned long vaddr,
+				  struct page *topage)
+{
+	sc_copy_user_page(to, from, vaddr, topage);
+}
+#else
 static inline void clear_user_page(void *page, unsigned long vaddr,
 				   struct page *pg)
 {
@@ -32,6 +50,7 @@ static inline void copy_user_page(void *to, void *from, unsigned long vaddr,
 {
 	copy_page(to, from);
 }
+#endif
 
 #define __alloc_zeroed_user_highpage(movableflags, vma, vaddr) \
 	alloc_page_vma(GFP_HIGHUSER | __GFP_ZERO | movableflags, vma, vaddr)

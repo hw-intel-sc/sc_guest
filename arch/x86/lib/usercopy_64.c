@@ -12,6 +12,40 @@
  * Zero Userspace
  */
 
+#ifdef CONFIG_SC_GUEST
+#include <asm/sc.h>
+unsigned long __clear_user(void __user *addr, unsigned long len)
+{
+	int ret = 0;
+	struct data_ex_cfg cfg;
+	unsigned long ptr, size, left;
+
+	might_fault();
+	stac();
+
+	ptr = (unsigned long) addr;
+	while (len) {
+		left = PAGE_SIZE - (ptr & (PAGE_SIZE - 1));
+		size = (len > left) ? left : len;
+		cfg.set_ptr = uvirt_to_phys((void *)ptr, 1);
+		cfg.set_val = 0;
+		cfg.set_size = size;
+		cfg.op = SC_DATA_EXCHG_SET;
+		ret = sc_guest_exchange_data(&cfg);
+		if (ret == -EFAULT) {
+			printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			return len;
+		}
+
+		len = len - size;
+		ptr += size;
+	}
+	clac();
+	return 0;
+}
+EXPORT_SYMBOL(__clear_user);
+#else
+
 unsigned long __clear_user(void __user *addr, unsigned long size)
 {
 	long __d0;
@@ -45,6 +79,7 @@ unsigned long __clear_user(void __user *addr, unsigned long size)
 	return size;
 }
 EXPORT_SYMBOL(__clear_user);
+#endif
 
 unsigned long clear_user(void __user *to, unsigned long n)
 {
