@@ -213,6 +213,15 @@ int sc_guest_exchange_data(struct data_ex_cfg *cfg);
 int sc_guest_create_view(void);
 int sc_guest_free_pages(struct page *page, int numpages);
 int sc_guest_share_page(struct page *page);
+int sc_guest_data_move(const unsigned long src, const unsigned long dst, uint64_t size);
+int sc_guest_data_xchg(int *oldval, u32 __user *uaddr, int *oparg);
+int sc_guest_data_add(int *oldval, u32 __user *uaddr, int *oparg);
+int sc_guest_data_or(int *oldval, u32 __user *uaddr, int *oparg);
+int sc_guest_data_and(int *oldval, u32 __user *uaddr, int *oparg);
+int sc_guest_data_xor(int *oldval, u32 __user *uaddr, int *oparg);
+int sc_guest_data_cmpxchg(uint64_t *old, void *ptr, uint64_t new, int size);
+int sc_guest_data_set(unsigned long uaddr, uint8_t val, unsigned long size);
+unsigned long sc_guest_copy_user_generic(void *to, const void *from, unsigned len);
 #endif
 
 #endif

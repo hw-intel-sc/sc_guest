@@ -186,9 +186,7 @@ static inline int sc_fsave_user(struct i387_fsave_struct __user *fx)
 	void *buf;
 	int size, off;
 	struct i387_fsave_struct *kfx;
-	struct data_ex_cfg cfg;
 	int ret = 0;
-	phys_addr_t gpa = uvirt_to_phys(fx, 1);
 
 	// fxsave and store require 16 byte align
 	size = sizeof(struct i387_fxsave_struct) + 15;
@@ -207,13 +205,9 @@ static inline int sc_fsave_user(struct i387_fsave_struct __user *fx)
 		return ret;
 	}
 
-	cfg.mov_src = __pa((uint64_t)kfx);
-	cfg.mov_dst = gpa;
-	cfg.mov_size = sizeof(struct i387_fsave_struct);
-	cfg.op = SC_DATA_EXCHG_MOV;
-	ret = sc_guest_exchange_data(&cfg);
+	ret = sc_guest_data_move(kfx, fx, sizeof(struct i387_fsave_struct));
 	if (ret == -EFAULT) {
-		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_data_move failed (%s:%d) -\n",__func__,__LINE__);
 	}
 	kfree(buf);
 	return ret;
@@ -224,9 +218,7 @@ static inline int sc_fxsave_user(struct i387_fxsave_struct __user *fx)
 	void *buf;
 	int size, off;
 	struct i387_fsave_struct *kfx;
-	struct data_ex_cfg cfg;
 	int ret = 0;
-	phys_addr_t gpa = uvirt_to_phys(fx, 1);
 
 	// fxsave and store require 16 byte align
 	size = sizeof(struct i387_fxsave_struct) + 15;
@@ -249,13 +241,9 @@ static inline int sc_fxsave_user(struct i387_fxsave_struct __user *fx)
 		//ret = user_insn(rex64/fxsave (%[fx]), "=m" (*fx), [fx] "R" (fx));
 	}
 
-	cfg.mov_src = __pa((uint64_t)kfx);
-	cfg.mov_dst = gpa;
-	cfg.mov_size = sizeof(struct i387_fsave_struct);
-	cfg.op = SC_DATA_EXCHG_MOV;
-	ret = sc_guest_exchange_data(&cfg);
+	ret = sc_guest_data_move(kfx, fx, sizeof(struct i387_fsave_struct));
 	if (ret == -EFAULT) {
-		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_data_move failed (%s:%d) -\n",__func__,__LINE__);
 	}
 
 	kfree(buf);
@@ -315,9 +303,7 @@ static inline int sc_fxrstor_user(struct i387_fxsave_struct __user *fx)
 	void *buf;
 	int size, off;
 	struct i387_fsave_struct *kfx;
-	struct data_ex_cfg cfg;
 	int ret = 0;
-	phys_addr_t gpa = uvirt_to_phys(fx, 1);
 
 	// fxsave and store require 16 byte align
 	size = sizeof(struct i387_fxsave_struct) + 15;
@@ -325,14 +311,10 @@ static inline int sc_fxrstor_user(struct i387_fxsave_struct __user *fx)
 	off = ((unsigned long)buf) & 0xF;
 	kfx = (struct i387_fsave_struct *)((unsigned long)buf + ((off == 0)? 0 : (0x10 - off)));
 
-	cfg.mov_src = gpa;
-	cfg.mov_dst = __pa((uint64_t)kfx);
-	cfg.mov_size = sizeof(struct i387_fsave_struct);
-	cfg.op = SC_DATA_EXCHG_MOV;
-	ret = sc_guest_exchange_data(&cfg);
+	ret = sc_guest_data_move(fx, kfx, sizeof(struct i387_fsave_struct));
 	if (ret == -EFAULT) {
 		kfree(buf);
-		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_data_move failed (%s:%d) -\n",__func__,__LINE__);
 		return ret;
 	}
 
@@ -381,9 +363,7 @@ static inline int sc_frstor_user(struct i387_fsave_struct __user *fx)
 	void *buf;
 	int size, off;
 	struct i387_fsave_struct *kfx;
-	struct data_ex_cfg cfg;
 	int ret;
-	phys_addr_t gpa = uvirt_to_phys(fx, 1);
 
 	// fxsave and store require 16 byte align
 	size = sizeof(struct i387_fxsave_struct) + 15;
@@ -391,14 +371,10 @@ static inline int sc_frstor_user(struct i387_fsave_struct __user *fx)
 	off = ((unsigned long)buf) & 0xF;
 	kfx = (struct i387_fsave_struct *)((unsigned long)buf + ((off == 0)? 0 : (0x10 - off)));
 
-	cfg.mov_src = gpa;
-	cfg.mov_dst = __pa((uint64_t)kfx);
-	cfg.mov_size = sizeof(struct i387_fsave_struct);
-	cfg.op = SC_DATA_EXCHG_MOV;
-	ret = sc_guest_exchange_data(&cfg);
+	ret = sc_guest_data_move(fx, kfx, sizeof(struct i387_fsave_struct));
 	if (ret == -EFAULT) {
 		kfree(buf);
-		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_data_move failed (%s:%d) -\n",__func__,__LINE__);
 		return ret;
 	}
 

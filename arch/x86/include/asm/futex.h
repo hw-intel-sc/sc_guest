@@ -51,10 +51,6 @@ static inline int futex_atomic_op_inuser(int encoded_op, u32 __user *uaddr)
 	int oparg = (encoded_op << 8) >> 20;
 	int cmparg = (encoded_op << 20) >> 20;
 	int oldval = 0, ret, tem;
-#ifdef CONFIG_SC_GUEST
-	struct data_ex_cfg cfg;
-	uint32_t kpa, upa;
-#endif
 
 	if (encoded_op & (FUTEX_OP_OPARG_SHIFT << 28))
 		oparg = 1 << oparg;
@@ -65,62 +61,42 @@ static inline int futex_atomic_op_inuser(int encoded_op, u32 __user *uaddr)
 	pagefault_disable();
 
 #ifdef CONFIG_SC_GUEST
-	if (sc_guest_is_in_sc()) {
-		ret = 0;
-		upa = uvirt_to_phys((const void *)uaddr, 1);
-		kpa = __pa(&oparg);
-		cfg.ptr1 = kpa;
-		cfg.ptr2 = upa;
-		cfg.oldval = __pa(&oldval);
-		switch (op) {
-			case FUTEX_OP_SET:
-				cfg.op = SC_DATA_EXCHG_XCHG;
-				break;
-			case FUTEX_OP_ADD:
-				cfg.op = SC_DATA_EXCHG_ADD;
-				break;
-			case FUTEX_OP_OR:
-				cfg.op = SC_DATA_EXCHG_OR;
-				break;
-			case FUTEX_OP_ANDN:
-				tem = ~oparg;
-				kpa = __pa(&(tem));
-				cfg.ptr1 = kpa;
-				cfg.op = SC_DATA_EXCHG_AND;
-				break;
-			case FUTEX_OP_XOR:
-				cfg.op = SC_DATA_EXCHG_XOR;
-				break;
-			default:
-				ret = -ENOSYS;
-		}
-		if (!ret) {
-			ret = sc_guest_exchange_data(&cfg);
-			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). op=%d---\n",__func__,__LINE__,op);
-			}
-		}
-	} else {
-		switch (op) {
-		case FUTEX_OP_SET:
+	switch (op) {
+	case FUTEX_OP_SET:
+		if (sc_guest_is_in_sc())
+			ret = sc_guest_data_xchg(&oldval, uaddr, &oparg);
+		else
 			__futex_atomic_op1("xchgl %0, %2", ret, oldval, uaddr, oparg);
-			break;
-		case FUTEX_OP_ADD:
+		break;
+	case FUTEX_OP_ADD:
+		if (sc_guest_is_in_sc())
+			ret = sc_guest_data_add(&oldval, uaddr, &oparg);
+		else
 			__futex_atomic_op1(LOCK_PREFIX "xaddl %0, %2", ret, oldval,
-					   uaddr, oparg);
-			break;
-		case FUTEX_OP_OR:
+				   uaddr, oparg);
+		break;
+	case FUTEX_OP_OR:
+		if (sc_guest_is_in_sc())
+			ret = sc_guest_data_or(&oldval, uaddr, &oparg);
+		else
 			__futex_atomic_op2("orl %4, %3", ret, oldval, uaddr, oparg);
-			break;
-		case FUTEX_OP_ANDN:
+		break;
+	case FUTEX_OP_ANDN:
+		if (sc_guest_is_in_sc()) {
+			tem = ~oparg;
+			ret = sc_guest_data_and(&oldval, uaddr, &(tem));
+		} else {
 			__futex_atomic_op2("andl %4, %3", ret, oldval, uaddr, ~oparg);
-			break;
-		case FUTEX_OP_XOR:
-			__futex_atomic_op2("xorl %4, %3", ret, oldval, uaddr, oparg);
-			break;
-		default:
-			ret = -ENOSYS;
 		}
+		break;
+	case FUTEX_OP_XOR:
+		if (sc_guest_is_in_sc())
+			ret = sc_guest_data_xor(&oldval, uaddr, &oparg);
+		else
+			__futex_atomic_op2("xorl %4, %3", ret, oldval, uaddr, oparg);
+		break;
+	default:
+		ret = -ENOSYS;
 	}
 
 #else

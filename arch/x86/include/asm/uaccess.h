@@ -178,17 +178,11 @@ __typeof__(__builtin_choose_expr(sizeof(x) > sizeof(0UL), 0ULL, 0UL))
 #define sc_get_user(x, ptr)						\
 ({							\
 	int __ret_gu;							\
-	struct data_ex_cfg ex_cfg;		\
 	__inttype(*(ptr)) __val_gu = 0;			\
 	phys_addr_t gpa;			\
 	__chk_user_ptr(ptr);						\
 	might_fault();							\
-	gpa = uvirt_to_phys((const volatile void *)(ptr), 0);	\
-	ex_cfg.mov_src = gpa;					\
-	ex_cfg.mov_dst = __pa((uint64_t)&__val_gu);			\
-	ex_cfg.mov_size = sizeof(*(ptr));		\
-	ex_cfg.op = SC_DATA_EXCHG_MOV;		\
-	__ret_gu = sc_guest_exchange_data(&ex_cfg);				\
+	__ret_gu = sc_guest_data_move((ptr), &__val_gu, sizeof(*(ptr)));				\
 	(x) = (__force __typeof__(*(ptr))) __val_gu;			\
 	__ret_gu;							\
 })
@@ -293,18 +287,11 @@ extern void __put_user_8(void);
 #define sc_put_user(x, ptr)						\
 ({							\
 	int __ret_pu;		\
-	struct data_ex_cfg ex_cfg;		\
-	phys_addr_t gpa;			\
 	__typeof__(*(ptr)) __pu_val;				\
 	__chk_user_ptr(ptr);						\
 	might_fault();							\
 	__pu_val = x;						\
-	gpa = uvirt_to_phys((const volatile void*)(ptr), 1);	\
-	ex_cfg.mov_dst = gpa;					\
-	ex_cfg.mov_src = __pa((uint64_t)&__pu_val);			\
-	ex_cfg.mov_size = sizeof(*(ptr));		\
-	ex_cfg.op = SC_DATA_EXCHG_MOV;		\
-	__ret_pu = sc_guest_exchange_data(&ex_cfg);				\
+	__ret_pu = sc_guest_data_move(&__pu_val, (ptr), sizeof(*(ptr)));				\
 	__ret_pu;		\
 })
 #endif
@@ -376,7 +363,6 @@ do {									\
 #ifdef CONFIG_SC_GUEST
 #define sc__put_user_size_ex(x, ptr, size)				\
 ({								\
-	struct data_ex_cfg ex_cfg;		\
 	__typeof__(*(ptr)) __pu_val;				\
 	phys_addr_t pa;			\
 	__chk_user_ptr(ptr);						\
@@ -386,12 +372,7 @@ do {									\
 		case 4:				\
 		case 8:				\
 			__pu_val = (x);			\
-			pa = uvirt_to_phys((const volatile void *)(ptr), 1);  \
-			ex_cfg.mov_src = __pa((uint64_t)&__pu_val);	\
-			ex_cfg.mov_dst = pa;					\
-			ex_cfg.mov_size = size;				\
-			ex_cfg.op = SC_DATA_EXCHG_MOV;		\
-			sc_guest_exchange_data(&ex_cfg);	\
+			sc_guest_data_move(&__pu_val, (ptr), size);	\
 		break;						\
 		default:					\
 			__put_user_bad();		\
@@ -511,32 +492,18 @@ do {									\
 #ifdef CONFIG_SC_GUEST
 #define sc__put_user_nocheck(x, ptr, size)			\
 ({								\
-	struct data_ex_cfg ex_cfg;		\
 	int __pu_err;						\
 	unsigned long __pu_val;				\
-	phys_addr_t pa;			\
 	__pu_val = (unsigned long)x;		\
-	pa = uvirt_to_phys((const volatile void *)(ptr), 1);  \
-	ex_cfg.mov_src = __pa((unsigned long)(&(__pu_val)));					\
-	ex_cfg.mov_dst = (uint64_t)pa;					\
-	ex_cfg.mov_size = size;				\
-	ex_cfg.op = SC_DATA_EXCHG_MOV;			\
-	__pu_err = sc_guest_exchange_data(&ex_cfg);	\
+	__pu_err = sc_guest_data_move(&(__pu_val), (ptr), size);	\
 	__pu_err;			\
  })
 
 #define sc__get_user_nocheck(x, ptr, size)	\
 ({								\
-	struct data_ex_cfg ex_cfg;		\
 	unsigned long __gu_val;				\
 	int __gu_err;							\
-	phys_addr_t pa;			\
-	pa = uvirt_to_phys((const volatile void *)(ptr), 0);  \
-	ex_cfg.mov_src = (uint64_t)pa;					\
-	ex_cfg.mov_dst = __pa((unsigned long)(&(__gu_val)));					\
-	ex_cfg.mov_size = size;				\
-	ex_cfg.op = SC_DATA_EXCHG_MOV;		\
-	__gu_err = sc_guest_exchange_data(&ex_cfg);	\
+	__gu_err = sc_guest_data_move((ptr), &(__gu_val), size);	\
 	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
 	__gu_err;				\
  })
@@ -687,15 +654,8 @@ struct __large_struct { unsigned long buf[100]; };
 #ifdef CONFIG_SC_GUEST
 #define sc_get_user_ex(x, ptr)	\
 ({								\
-	struct data_ex_cfg ex_cfg;		\
-	phys_addr_t pa;			\
 	unsigned long __gue_val;					\
-	pa = uvirt_to_phys((const volatile void *)(ptr), 0);  \
-	ex_cfg.mov_src = pa;					\
-	ex_cfg.mov_dst = __pa(&__gue_val);		\
-	ex_cfg.mov_size = sizeof(*(ptr));		\
-	ex_cfg.op = SC_DATA_EXCHG_MOV;			\
-	sc_guest_exchange_data(&ex_cfg);	\
+	sc_guest_data_move((ptr), &__gue_val, sizeof(*(ptr)));	\
 	(x) = (__force __typeof__(*(ptr)))__gue_val;			\
  })
 #endif
@@ -748,14 +708,8 @@ extern void __cmpxchg_wrong_size(void)
 	int __ret = 0;							\
 	__typeof__(ptr) __uval = (uval);			\
 	__typeof__(*(ptr)) __old = (old);			\
-	struct data_ex_cfg cfg;						\
 	if (ptr) {									\
-		cfg.cmpxchg_ptr1 = __pa((unsigned long)&__old);					\
-		cfg.cmpxchg_ptr2 = uvirt_to_phys((const volatile void *)(ptr), 1);  \
-		cfg.cmpxchg_new= (uint64_t)(new);						\
-		cfg.cmpxchg_size = size;					\
-		cfg.op = SC_DATA_EXCHG_CMPXCHG;				\
-		__ret = sc_guest_exchange_data(&cfg);		\
+		__ret = sc_guest_data_cmpxchg(&__old, (ptr), new, size);		\
 		*__uval = __old;					\
 	} else {								\
 		__ret = -EFAULT;							\
@@ -932,99 +886,13 @@ __copy_from_user_overflow(int size, unsigned long count)
 static inline unsigned long __must_check
 sc_copy_from_user(void *to, const void __user *from, unsigned long len)
 {
-	int ret = 0;
-	struct data_ex_cfg cfg;
-	unsigned long src, dst, size, left1, left2;
-
-	src = (unsigned long) from;
-	dst = (unsigned long) to;
-	while (len) {
-		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
-		size = (len > left1) ? left1 : len;
-		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
-		if (likely(left2 >= size)) {
-			cfg.mov_src = uvirt_to_phys((void *)src, 0);
-			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
-			cfg.mov_size = size;
-			cfg.op = SC_DATA_EXCHG_MOV;
-			ret = sc_guest_exchange_data(&cfg);
-			if (ret == -EFAULT) {
-				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
-			}
-		} else {
-			cfg.mov_src = uvirt_to_phys((void *)src, 0);
-			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
-			cfg.mov_size = left2;
-			cfg.op = SC_DATA_EXCHG_MOV;
-			ret = sc_guest_exchange_data(&cfg);
-			if (ret == -EFAULT) {
-				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
-			}
-
-			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
-			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
-			cfg.mov_size = size - left2;
-			cfg.op = SC_DATA_EXCHG_MOV;
-			ret = sc_guest_exchange_data(&cfg);
-			if (ret == -EFAULT) {
-				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
-			}
-		}
-		len = len - size;
-		src += size;
-		dst += size;
-	}
-
-	return ret;
+	return sc_guest_copy_user_generic(to, from, len);
 }
 
 static inline unsigned long __must_check
 sc_copy_to_user(void __user *to, const void *from, unsigned long len)
 {
-	int ret = 0;
-	struct data_ex_cfg cfg;
-	unsigned long src, dst, size, left1, left2;
-
-	src = (unsigned long) from;
-	dst = (unsigned long) to;
-	while (len) {
-		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
-		size = (len > left1) ? left1 : len;
-		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
-		if (likely(left2 >= size)) {
-			cfg.mov_src = uvirt_to_phys((void *)src, 0);
-			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
-			cfg.mov_size = size;
-			cfg.op = SC_DATA_EXCHG_MOV;
-			ret = sc_guest_exchange_data(&cfg);
-			if (ret == -EFAULT) {
-				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
-			}
-		} else {
-			cfg.mov_src = uvirt_to_phys((void *)src, 0);
-			cfg.mov_dst = uvirt_to_phys((void *)dst, 1);
-			cfg.mov_size = left2;
-			cfg.op = SC_DATA_EXCHG_MOV;
-			ret = sc_guest_exchange_data(&cfg);
-			if (ret == -EFAULT) {
-				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
-			}
-
-			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
-			cfg.mov_dst = uvirt_to_phys((void *)(dst + left2), 1);
-			cfg.mov_size = size - left2;
-			cfg.op = SC_DATA_EXCHG_MOV;
-			ret = sc_guest_exchange_data(&cfg);
-			if (ret == -EFAULT) {
-				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
-			}
-		}
-		len = len - size;
-		src += size;
-		dst += size;
-	}
-
-	return ret;
+	return sc_guest_copy_user_generic(to, from, len);
 }
 #endif
 

@@ -137,19 +137,166 @@ phys_addr_t uvirt_to_phys(const volatile void *addr, int write)
 }
 EXPORT_SYMBOL_GPL(uvirt_to_phys);
 
+int sc_guest_exchange_data(struct data_ex_cfg *cfg)
+{
+	return sc_send_vmcall(KVM_HC_SC, HC_DATA_EXCHANGE,(void*)__pa(cfg), (void*)sizeof(struct data_ex_cfg));
+}
+EXPORT_SYMBOL_GPL(sc_guest_exchange_data);
+
+int sc_guest_data_move(const unsigned long src, const unsigned long dst, uint64_t size)
+{
+	struct data_ex_cfg cfg;
+	int ret;
+
+	cfg.op = SC_DATA_EXCHG_MOV;
+	cfg.mov_src = uvirt_to_phys(src, 0);
+	cfg.mov_dst = uvirt_to_phys(dst, 1);
+	cfg.mov_size = size;
+
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_move);
+
+int sc_guest_data_xchg(int *oldval, u32 __user *uaddr, int *oparg)
+{
+	struct data_ex_cfg cfg;
+	int ret;
+
+	cfg.op = SC_DATA_EXCHG_XCHG;
+	cfg.oldval = uvirt_to_phys(oldval, 1);
+	cfg.ptr2 = uvirt_to_phys(uaddr, 1);
+	cfg.ptr1 = uvirt_to_phys(oparg, 1);
+
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_xchg);
+
+int sc_guest_data_add(int *oldval, u32 __user *uaddr, int *oparg)
+{
+	struct data_ex_cfg cfg;
+	int ret;
+
+	cfg.op = SC_DATA_EXCHG_ADD;
+	cfg.oldval = uvirt_to_phys(oldval, 1);
+	cfg.ptr2 = uvirt_to_phys(uaddr, 1);
+	cfg.ptr1 = uvirt_to_phys(oparg, 0);
+
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_add);
+
+int sc_guest_data_or(int *oldval, u32 __user *uaddr, int *oparg)
+{
+	struct data_ex_cfg cfg;
+	int ret;
+
+	cfg.op = SC_DATA_EXCHG_OR;
+	cfg.oldval = uvirt_to_phys(oldval, 1);
+	cfg.ptr2 = uvirt_to_phys(uaddr, 1);
+	cfg.ptr1 = uvirt_to_phys(oparg, 0);
+
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_or);
+
+int sc_guest_data_and(int *oldval, u32 __user *uaddr, int *oparg)
+{
+	struct data_ex_cfg cfg;
+	int ret;
+
+	cfg.op = SC_DATA_EXCHG_AND;
+	cfg.oldval = uvirt_to_phys(oldval, 1);
+	cfg.ptr2 = uvirt_to_phys(uaddr, 1);
+	cfg.ptr1 = uvirt_to_phys(oparg, 0);
+
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_and);
+
+int sc_guest_data_xor(int *oldval, u32 __user *uaddr, int *oparg)
+{
+	struct data_ex_cfg cfg;
+	int ret;
+
+	cfg.op = SC_DATA_EXCHG_XOR;
+	cfg.oldval = uvirt_to_phys(oldval, 1);
+	cfg.ptr2 = uvirt_to_phys(uaddr, 1);
+	cfg.ptr1 = uvirt_to_phys(oparg, 0);
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_xor);
+
+int sc_guest_data_cmpxchg(uint64_t *old, void *ptr, uint64_t new, int size)
+{
+	struct data_ex_cfg cfg;
+	int ret;
+
+	cfg.op = SC_DATA_EXCHG_CMPXCHG;
+	cfg.cmpxchg_ptr1 = uvirt_to_phys(old, 1);
+	cfg.cmpxchg_ptr2 = uvirt_to_phys(ptr, 1);
+	cfg.cmpxchg_new = new;
+	cfg.cmpxchg_size = size;
+
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_cmpxchg);
+
+int sc_guest_data_set(unsigned long uaddr, uint8_t val, unsigned long size)
+{
+	int ret;
+	struct data_ex_cfg cfg;
+
+	cfg.set_ptr = uvirt_to_phys(uaddr, 1);
+	cfg.set_val = val;
+	cfg.set_size = size;
+	cfg.op = SC_DATA_EXCHG_SET;
+	ret = sc_guest_exchange_data(&cfg);
+	if (ret == -EFAULT) {
+		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sc_guest_data_set);
+
 void sc_clear_user_page(void *page, unsigned long vaddr,
 		struct page *pg)
 {
 	int ret;
 	struct data_ex_cfg cfg;
-	phys_addr_t gpa;
 
-	gpa = uvirt_to_phys((const void*)page, 1);
-	cfg.set_ptr = gpa;
-	cfg.set_val = 0;
-	cfg.set_size = PAGE_SIZE;
-	cfg.op = SC_DATA_EXCHG_SET;
-	ret = sc_guest_exchange_data(&cfg);
+	ret = sc_guest_data_set(page, 0, PAGE_SIZE);
 	if (ret == -EFAULT) {
 		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). ---\n",__func__,__LINE__);
 	}
@@ -173,11 +320,41 @@ void sc_copy_user_page(void *to, void *from, unsigned long vaddr,
 }
 EXPORT_SYMBOL_GPL(sc_copy_user_page);
 
-int sc_guest_exchange_data(struct data_ex_cfg *cfg)
+unsigned long sc_guest_copy_user_generic(void *to, const void *from, unsigned len)
 {
-	return sc_send_vmcall(KVM_HC_SC, HC_DATA_EXCHANGE,(void*)__pa(cfg), (void*)sizeof(struct data_ex_cfg));
+	int ret = 0;
+	unsigned long src, dst, size, left1, left2;
+
+	src = (unsigned long) from;
+	dst = (unsigned long) to;
+	while (len) {
+		left1 = PAGE_SIZE - (src & (PAGE_SIZE - 1));
+		size = (len > left1) ? left1 : len;
+		left2 = PAGE_SIZE - (dst & (PAGE_SIZE - 1));
+		if( likely(left2 >= size)) {
+			ret = sc_guest_data_move(src, dst, size);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "sc_guest_data_move failed (%s:%d) -\n",__func__,__LINE__);
+			}
+		} else {
+			ret = sc_guest_data_move(src, dst, left2);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "sc_guest_data_move failed (%s:%d) -\n",__func__,__LINE__);
+			}
+
+			ret = sc_guest_data_move(src + left2, dst + left2, size - left2);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "sc_guest_data_move failed (%s:%d) -\n",__func__,__LINE__);
+			}
+		}
+		len = len - size;
+		src += size;
+		dst += size;
+	}
+
+	return ret ? len : 0;
 }
-EXPORT_SYMBOL_GPL(sc_guest_exchange_data);
+EXPORT_SYMBOL_GPL(sc_guest_copy_user_generic);
 
 int sc_guest_free_pages(struct page *page, int numpages)
 {

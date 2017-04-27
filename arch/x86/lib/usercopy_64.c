@@ -17,7 +17,6 @@
 unsigned long sc__clear_user(void __user *addr, unsigned long len)
 {
 	int ret = 0;
-	struct data_ex_cfg cfg;
 	unsigned long ptr, size, left;
 
 	might_fault();
@@ -27,13 +26,9 @@ unsigned long sc__clear_user(void __user *addr, unsigned long len)
 	while (len) {
 		left = PAGE_SIZE - (ptr & (PAGE_SIZE - 1));
 		size = (len > left) ? left : len;
-		cfg.set_ptr = uvirt_to_phys((void *)ptr, 1);
-		cfg.set_val = 0;
-		cfg.set_size = size;
-		cfg.op = SC_DATA_EXCHG_SET;
-		ret = sc_guest_exchange_data(&cfg);
+		ret = sc_guest_data_set(ptr, 0, size);
 		if (ret == -EFAULT) {
-			printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
+			printk(KERN_ERR "sc_guest_data_set failed (%s:%d) -\n",__func__,__LINE__);
 			return len;
 		}
 
