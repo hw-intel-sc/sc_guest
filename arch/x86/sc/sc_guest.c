@@ -179,7 +179,7 @@ int sc_guest_exchange_data(struct data_ex_cfg *cfg)
 }
 EXPORT_SYMBOL_GPL(sc_guest_exchange_data);
 
-int sc_guest_free_page(struct page *page, int numpages)
+int sc_guest_free_pages(struct page *page, int numpages)
 {
 	struct free_page_cfg cfg;
 	int ret = 0;
@@ -191,7 +191,7 @@ int sc_guest_free_page(struct page *page, int numpages)
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(sc_guest_free_page);
+EXPORT_SYMBOL_GPL(sc_guest_free_pages);
 
 int sc_guest_share_page(struct page *page)
 {

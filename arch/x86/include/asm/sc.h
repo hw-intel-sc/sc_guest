@@ -211,7 +211,7 @@ void sc_guest_check_exec_env(const char __user *str);
 phys_addr_t uvirt_to_phys(const volatile void *addr, int write);
 int sc_guest_exchange_data(struct data_ex_cfg *cfg);
 int sc_guest_create_view(void);
-int sc_guest_free_page(struct page *page, int numpages);
+int sc_guest_free_pages(struct page *page, int numpages);
 int sc_guest_share_page(struct page *page);
 #endif
 
