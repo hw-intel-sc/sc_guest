@@ -134,6 +134,11 @@ ifneq ($(KBUILD_OUTPUT),)
 saved-output := $(KBUILD_OUTPUT)
 KBUILD_OUTPUT := $(shell mkdir -p $(KBUILD_OUTPUT) && cd $(KBUILD_OUTPUT) \
 								&& /bin/pwd)
+CONFIG_FILE=$(KBUILD_OUTPUT)/.config
+exist=$(shell if [ ! -f $(CONFIG_FILE) ]; then cp config-4.1.37 $(CONFIG_FILE); fi;)
+ifeq ($(exist),)
+endif
+
 $(if $(KBUILD_OUTPUT),, \
      $(error failed to create output directory "$(saved-output)"))
 

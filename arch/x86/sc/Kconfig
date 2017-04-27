@@ -1,0 +1,22 @@
+#
+# Secure container configuration
+#
+
+menu "Secure container"
+
+config SC_GUEST
+	tristate "Secure Container Guest Support"
+	default n
+	---help---
+	  This selects Secure Container support for guest kernel.
+	  If you are unsure how to answer this question, answer N.
+
+config SC_HOST
+	bool "Secure Container Host Support"
+	depends on KVM
+	default n
+	---help---
+	  This selects Secure Container support for host kernel.
+	  If you are unsure how to answer this question, answer N.
+
+endmenu
