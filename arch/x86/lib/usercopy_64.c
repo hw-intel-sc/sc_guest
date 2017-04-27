@@ -14,7 +14,7 @@
 
 #ifdef CONFIG_SC_GUEST
 #include <asm/sc.h>
-unsigned long __clear_user(void __user *addr, unsigned long len)
+unsigned long sc__clear_user(void __user *addr, unsigned long len)
 {
 	int ret = 0;
 	struct data_ex_cfg cfg;
@@ -33,7 +33,7 @@ unsigned long __clear_user(void __user *addr, unsigned long len)
 		cfg.op = SC_DATA_EXCHG_SET;
 		ret = sc_guest_exchange_data(&cfg);
 		if (ret == -EFAULT) {
-			printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+			printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			return len;
 		}
 
@@ -43,10 +43,9 @@ unsigned long __clear_user(void __user *addr, unsigned long len)
 	clac();
 	return 0;
 }
-EXPORT_SYMBOL(__clear_user);
-#else
+#endif
 
-unsigned long __clear_user(void __user *addr, unsigned long size)
+unsigned long orig__clear_user(void __user *addr, unsigned long size)
 {
 	long __d0;
 	might_fault();
@@ -78,8 +77,17 @@ unsigned long __clear_user(void __user *addr, unsigned long size)
 	clac();
 	return size;
 }
-EXPORT_SYMBOL(__clear_user);
+
+unsigned long __clear_user(void __user *addr, unsigned long size)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc__clear_user(addr, size);
 #endif
+	return orig__clear_user(addr, size);
+}
+
+EXPORT_SYMBOL(__clear_user);
 
 unsigned long clear_user(void __user *to, unsigned long n)
 {

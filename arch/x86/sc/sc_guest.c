@@ -62,11 +62,11 @@ static int sc_send_vmcall(int id, int ops, void *param1, void *param2)
 	return ret;
 }
 
-bool is_sc(struct task_struct *task)
+bool sc_guest_is_in_sc(void)
 {
-	return task->ept_viewid > 0;
+	return current->ept_viewid > 0;
 }
-EXPORT_SYMBOL_GPL(is_sc);
+EXPORT_SYMBOL_GPL(sc_guest_is_in_sc);
 
 static bool enableSC = 0;
 static uint8_t enable_cluster = 0;
@@ -89,7 +89,7 @@ void sc_guest_check_exec_env(const char __user *str)
 		if (strlen(str) > 14) { // "enableCluster=pid#"
 			unsigned long pid = simple_strtoul(str+14, NULL, 10);
 			struct task_struct *tsk = find_task_by_pid_ns((pid_t)pid, &init_pid_ns);
-			if (tsk && is_sc(tsk)) {
+			if (tsk && (tsk->ept_viewid > 0)) {
 				cluster_id = tsk->ept_viewid;
 				printk(KERN_INFO "SC_GUEST: should trigger cluster into [pid %lu:viewid %u]\n",
 						pid, tsk->ept_viewid);

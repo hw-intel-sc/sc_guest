@@ -65,40 +65,64 @@ static inline int futex_atomic_op_inuser(int encoded_op, u32 __user *uaddr)
 	pagefault_disable();
 
 #ifdef CONFIG_SC_GUEST
-	ret = 0;
-	upa = uvirt_to_phys((const void *)uaddr, 1);
-	kpa = __pa(&oparg);
-	cfg.ptr1 = kpa;
-	cfg.ptr2 = upa;
-	cfg.oldval = __pa(&oldval);
-	switch (op) {
+	if (sc_guest_is_in_sc()) {
+		ret = 0;
+		upa = uvirt_to_phys((const void *)uaddr, 1);
+		kpa = __pa(&oparg);
+		cfg.ptr1 = kpa;
+		cfg.ptr2 = upa;
+		cfg.oldval = __pa(&oldval);
+		switch (op) {
+			case FUTEX_OP_SET:
+				cfg.op = SC_DATA_EXCHG_XCHG;
+				break;
+			case FUTEX_OP_ADD:
+				cfg.op = SC_DATA_EXCHG_ADD;
+				break;
+			case FUTEX_OP_OR:
+				cfg.op = SC_DATA_EXCHG_OR;
+				break;
+			case FUTEX_OP_ANDN:
+				tem = ~oparg;
+				kpa = __pa(&(tem));
+				cfg.ptr1 = kpa;
+				cfg.op = SC_DATA_EXCHG_AND;
+				break;
+			case FUTEX_OP_XOR:
+				cfg.op = SC_DATA_EXCHG_XOR;
+				break;
+			default:
+				ret = -ENOSYS;
+		}
+		if (!ret) {
+			ret = sc_guest_exchange_data(&cfg);
+			if (ret == -EFAULT) {
+				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). op=%d---\n",__func__,__LINE__,op);
+			}
+		}
+	} else {
+		switch (op) {
 		case FUTEX_OP_SET:
-			cfg.op = SC_DATA_EXCHG_XCHG;
+			__futex_atomic_op1("xchgl %0, %2", ret, oldval, uaddr, oparg);
 			break;
 		case FUTEX_OP_ADD:
-			cfg.op = SC_DATA_EXCHG_ADD;
+			__futex_atomic_op1(LOCK_PREFIX "xaddl %0, %2", ret, oldval,
+					   uaddr, oparg);
 			break;
 		case FUTEX_OP_OR:
-			cfg.op = SC_DATA_EXCHG_OR;
+			__futex_atomic_op2("orl %4, %3", ret, oldval, uaddr, oparg);
 			break;
 		case FUTEX_OP_ANDN:
-			tem = ~oparg;
-			kpa = __pa(&(tem));
-			cfg.ptr1 = kpa;
-			cfg.op = SC_DATA_EXCHG_AND;
+			__futex_atomic_op2("andl %4, %3", ret, oldval, uaddr, ~oparg);
 			break;
 		case FUTEX_OP_XOR:
-			cfg.op = SC_DATA_EXCHG_XOR;
+			__futex_atomic_op2("xorl %4, %3", ret, oldval, uaddr, oparg);
 			break;
 		default:
 			ret = -ENOSYS;
-	}
-	if (!ret) {
-		ret = sc_guest_exchange_data(&cfg);
-		if (ret == -EFAULT) {
-			printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d). op=%d---\n",__func__,__LINE__,op);
 		}
 	}
+
 #else
 	switch (op) {
 	case FUTEX_OP_SET:

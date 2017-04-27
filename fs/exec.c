@@ -481,7 +481,7 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 			goto out;
 
 #ifdef CONFIG_SC_GUEST
-		if (!is_sc(current))
+		if (!sc_guest_is_in_sc())
 			sc_guest_check_exec_env(str);
 #endif
 

@@ -21,35 +21,54 @@ struct page;
 extern struct range pfn_mapped[];
 extern int nr_pfn_mapped;
 
-#ifdef CONFIG_SC_GUEST
-extern void sc_clear_user_page(void *page, unsigned long vaddr,
-				   struct page *pg);
-extern void sc_copy_user_page(void *to, void *from, unsigned long vaddr,
-				  struct page *topage);
-
-static inline void clear_user_page(void *page, unsigned long vaddr,
-				   struct page *pg)
-{
-	sc_clear_user_page(page, vaddr, pg);
-}
-
-static inline void copy_user_page(void *to, void *from, unsigned long vaddr,
-				  struct page *topage)
-{
-	sc_copy_user_page(to, from, vaddr, topage);
-}
-#else
-static inline void clear_user_page(void *page, unsigned long vaddr,
+static inline void orig_clear_user_page(void *page, unsigned long vaddr,
 				   struct page *pg)
 {
 	clear_page(page);
 }
 
-static inline void copy_user_page(void *to, void *from, unsigned long vaddr,
+static inline void orig_copy_user_page(void *to, void *from, unsigned long vaddr,
 				  struct page *topage)
 {
 	copy_page(to, from);
 }
+
+#ifdef CONFIG_SC_GUEST
+extern bool sc_guest_is_in_sc(void);
+extern void sc_clear_user_page(void *page, unsigned long vaddr,
+				   struct page *pg);
+extern void sc_copy_user_page(void *to, void *from, unsigned long vaddr,
+				  struct page *topage);
+static inline void clear_user_page(void *page, unsigned long vaddr,
+				   struct page *pg)
+{
+	if (sc_guest_is_in_sc())
+		sc_clear_user_page(page, vaddr, pg);
+	else
+		orig_clear_user_page(page, vaddr, pg);
+}
+
+static inline void copy_user_page(void *to, void *from, unsigned long vaddr,
+				  struct page *topage)
+{
+	if (sc_guest_is_in_sc())
+		sc_copy_user_page(to, from, vaddr, topage);
+	else
+		orig_copy_user_page(to, from, vaddr, topage);
+}
+#else
+static inline void clear_user_page(void *page, unsigned long vaddr,
+				   struct page *pg)
+{
+		orig_clear_user_page(page, vaddr, pg);
+}
+
+static inline void copy_user_page(void *to, void *from, unsigned long vaddr,
+				  struct page *topage)
+{
+		orig_copy_user_page(to, from, vaddr, topage);
+}
+
 #endif
 
 #define __alloc_zeroed_user_highpage(movableflags, vma, vaddr) \

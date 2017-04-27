@@ -30,7 +30,7 @@ copy_user_generic_unrolled(void *to, const void *from, unsigned len);
 #include <asm/sc.h>
 
 static __always_inline __must_check unsigned long
-copy_user_generic(void *to, const void *from, unsigned len)
+sc_copy_user_generic(void *to, const void *from, unsigned len)
 {
 	int ret = 0;
 	struct data_ex_cfg cfg;
@@ -49,7 +49,7 @@ copy_user_generic(void *to, const void *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		} else {
 			cfg.mov_src = uvirt_to_phys((void *)src, 0);
@@ -58,7 +58,7 @@ copy_user_generic(void *to, const void *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 
 			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
@@ -67,7 +67,7 @@ copy_user_generic(void *to, const void *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		}
 		len = len - size;
@@ -77,9 +77,10 @@ copy_user_generic(void *to, const void *from, unsigned len)
 
 	return ret;
 }
-#else
+#endif
+
 static __always_inline __must_check unsigned long
-copy_user_generic(void *to, const void *from, unsigned len)
+orig_copy_user_generic(void *to, const void *from, unsigned len)
 {
 	unsigned ret;
 
@@ -99,14 +100,24 @@ copy_user_generic(void *to, const void *from, unsigned len)
 			 : "memory", "rcx", "r8", "r9", "r10", "r11");
 	return ret;
 }
+
+static __always_inline __must_check unsigned long
+copy_user_generic(void *to, const void *from, unsigned len)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc_copy_user_generic(to, from, len);
 #endif
+
+	return orig_copy_user_generic(to, from, len);
+}
 
 __must_check unsigned long
 copy_in_user(void __user *to, const void __user *from, unsigned len);
 
 #ifdef CONFIG_SC_GUEST
 static __always_inline __must_check
-int __copy_from_user_nocheck(void *to, const void __user *from, unsigned len)
+int sc__copy_from_user_nocheck(void *to, const void __user *from, unsigned len)
 {
 	int ret = 0;
 	struct data_ex_cfg cfg;
@@ -125,7 +136,7 @@ int __copy_from_user_nocheck(void *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		} else {
 			cfg.mov_src = uvirt_to_phys((void *)src, 0);
@@ -134,7 +145,7 @@ int __copy_from_user_nocheck(void *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 
 			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
@@ -143,7 +154,7 @@ int __copy_from_user_nocheck(void *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		}
 		len = len - size;
@@ -152,9 +163,10 @@ int __copy_from_user_nocheck(void *to, const void __user *from, unsigned len)
 	}
 	return ret;
 }
-#else
+#endif
+
 static __always_inline __must_check
-int __copy_from_user_nocheck(void *dst, const void __user *src, unsigned size)
+int orig__copy_from_user_nocheck(void *dst, const void __user *src, unsigned size)
 {
 	int ret = 0;
 
@@ -195,7 +207,16 @@ int __copy_from_user_nocheck(void *dst, const void __user *src, unsigned size)
 		return copy_user_generic(dst, (__force void *)src, size);
 	}
 }
+
+static __always_inline __must_check
+int __copy_from_user_nocheck(void *dst, const void __user *src, unsigned size)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc__copy_from_user_nocheck(dst, src, size);
 #endif
+	return orig__copy_from_user_nocheck(dst, src, size);
+}
 
 static __always_inline __must_check
 int __copy_from_user(void *dst, const void __user *src, unsigned size)
@@ -206,7 +227,7 @@ int __copy_from_user(void *dst, const void __user *src, unsigned size)
 
 #ifdef CONFIG_SC_GUEST
 static __always_inline __must_check
-int __copy_to_user_nocheck(void __user *to, const void *from, unsigned len)
+int sc__copy_to_user_nocheck(void __user *to, const void *from, unsigned len)
 {
 	int ret = 0;
 	struct data_ex_cfg cfg;
@@ -225,7 +246,7 @@ int __copy_to_user_nocheck(void __user *to, const void *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		} else {
 			cfg.mov_src = uvirt_to_phys((void *)src, 0);
@@ -234,7 +255,7 @@ int __copy_to_user_nocheck(void __user *to, const void *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 
 			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
@@ -243,7 +264,7 @@ int __copy_to_user_nocheck(void __user *to, const void *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		}
 		len = len - size;
@@ -253,10 +274,10 @@ int __copy_to_user_nocheck(void __user *to, const void *from, unsigned len)
 
 	return ret;
 }
-#else
+#endif
 
 static __always_inline __must_check
-int __copy_to_user_nocheck(void __user *dst, const void *src, unsigned size)
+int orig__copy_to_user_nocheck(void __user *dst, const void *src, unsigned size)
 {
 	int ret = 0;
 
@@ -297,7 +318,16 @@ int __copy_to_user_nocheck(void __user *dst, const void *src, unsigned size)
 		return copy_user_generic((__force void *)dst, src, size);
 	}
 }
+
+static __always_inline __must_check
+int __copy_to_user_nocheck(void __user *dst, const void *src, unsigned size)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc__copy_to_user_nocheck(dst, src, size);
 #endif
+	return orig__copy_to_user_nocheck(dst, src, size);
+}
 
 static __always_inline __must_check
 int __copy_to_user(void __user *dst, const void *src, unsigned size)
@@ -308,7 +338,7 @@ int __copy_to_user(void __user *dst, const void *src, unsigned size)
 
 #ifdef CONFIG_SC_GUEST
 static __always_inline __must_check
-int __copy_in_user(void __user *to, const void __user *from, unsigned len)
+int sc__copy_in_user(void __user *to, const void __user *from, unsigned len)
 {
 	int ret = 0;
 	struct data_ex_cfg cfg;
@@ -327,7 +357,7 @@ int __copy_in_user(void __user *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		} else {
 			cfg.mov_src = uvirt_to_phys((void *)src, 0);
@@ -336,7 +366,7 @@ int __copy_in_user(void __user *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 
 			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
@@ -345,7 +375,7 @@ int __copy_in_user(void __user *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		}
 		len = len - size;
@@ -355,9 +385,10 @@ int __copy_in_user(void __user *to, const void __user *from, unsigned len)
 
 	return ret;
 }
-#else
+#endif
+
 static __always_inline __must_check
-int __copy_in_user(void __user *dst, const void __user *src, unsigned size)
+int orig__copy_in_user(void __user *dst, const void __user *src, unsigned size)
 {
 	int ret = 0;
 
@@ -408,7 +439,16 @@ int __copy_in_user(void __user *dst, const void __user *src, unsigned size)
 					 (__force void *)src, size);
 	}
 }
+
+static __always_inline __must_check
+int __copy_in_user(void __user *dst, const void __user *src, unsigned size)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc__copy_in_user(dst, src, size);
 #endif
+	return orig__copy_in_user(dst, src, size);
+}
 
 static __must_check __always_inline int
 __copy_from_user_inatomic(void *dst, const void __user *src, unsigned size)
@@ -427,7 +467,7 @@ extern long __copy_user_nocache(void *dst, const void __user *src,
 
 #ifdef CONFIG_SC_GUEST
 static inline int
-__copy_from_user_nocache(void *to, const void __user *from, unsigned len)
+sc__copy_from_user_nocache(void *to, const void __user *from, unsigned len)
 {
 	int ret = 0;
 	struct data_ex_cfg cfg;
@@ -446,7 +486,7 @@ __copy_from_user_nocache(void *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		} else {
 			cfg.mov_src = uvirt_to_phys((void *)src, 0);
@@ -455,7 +495,7 @@ __copy_from_user_nocache(void *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 
 			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
@@ -464,7 +504,7 @@ __copy_from_user_nocache(void *to, const void __user *from, unsigned len)
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		}
 		len = len - size;
@@ -476,7 +516,7 @@ __copy_from_user_nocache(void *to, const void __user *from, unsigned len)
 }
 
 static inline int
-__copy_from_user_inatomic_nocache(void *to, const void __user *from,
+sc__copy_from_user_inatomic_nocache(void *to, const void __user *from,
 				  unsigned len)
 {
 	int ret = 0;
@@ -496,7 +536,7 @@ __copy_from_user_inatomic_nocache(void *to, const void __user *from,
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		} else {
 			cfg.mov_src = uvirt_to_phys((void *)src, 0);
@@ -505,7 +545,7 @@ __copy_from_user_inatomic_nocache(void *to, const void __user *from,
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 
 			cfg.mov_src = uvirt_to_phys((void *)(src + left2), 0);
@@ -514,7 +554,7 @@ __copy_from_user_inatomic_nocache(void *to, const void __user *from,
 			cfg.op = SC_DATA_EXCHG_MOV;
 			ret = sc_guest_exchange_data(&cfg);
 			if (ret == -EFAULT) {
-				printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+				printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 			}
 		}
 		len = len - size;
@@ -524,21 +564,42 @@ __copy_from_user_inatomic_nocache(void *to, const void __user *from,
 
 	return ret;
 }
-#else
+#endif
+
 static inline int
-__copy_from_user_nocache(void *dst, const void __user *src, unsigned size)
+orig__copy_from_user_nocache(void *dst, const void __user *src, unsigned size)
 {
 	might_fault();
 	return __copy_user_nocache(dst, src, size, 1);
 }
 
 static inline int
-__copy_from_user_inatomic_nocache(void *dst, const void __user *src,
+orig__copy_from_user_inatomic_nocache(void *dst, const void __user *src,
 				  unsigned size)
 {
 	return __copy_user_nocache(dst, src, size, 0);
 }
+
+static inline int
+__copy_from_user_nocache(void *dst, const void __user *src, unsigned size)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc__copy_from_user_nocache(dst, src, size);
 #endif
+	return orig__copy_from_user_nocheck(dst, src, size);
+}
+
+static inline int
+__copy_from_user_inatomic_nocache(void *to, const void __user *from,
+				  unsigned len)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc__copy_from_user_inatomic_nocache(to, from, len);
+#endif
+	return orig__copy_from_user_inatomic_nocache(to, from, len);
+}
 
 unsigned long
 copy_user_handle_tail(char *to, char *from, unsigned len);

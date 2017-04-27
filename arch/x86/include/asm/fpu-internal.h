@@ -181,7 +181,7 @@ static inline void sanitize_i387_state(struct task_struct *tsk)
 
 #ifdef CONFIG_SC_GUEST
 #include <asm/sc.h>
-static inline int fsave_user(struct i387_fsave_struct __user *fx)
+static inline int sc_fsave_user(struct i387_fsave_struct __user *fx)
 {
 	void *buf;
 	int size, off;
@@ -203,7 +203,7 @@ static inline int fsave_user(struct i387_fsave_struct __user *fx)
 	*/
 	if (ret) {
 		kfree(buf);
-		printk(KERN_ERR "### %s -- user_insn failed -- \n",__func__);
+		printk(KERN_ERR "%s - user_insn failed - \n",__func__);
 		return ret;
 	}
 
@@ -213,13 +213,13 @@ static inline int fsave_user(struct i387_fsave_struct __user *fx)
 	cfg.op = SC_DATA_EXCHG_MOV;
 	ret = sc_guest_exchange_data(&cfg);
 	if (ret == -EFAULT) {
-		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 	}
 	kfree(buf);
 	return ret;
 }
 
-static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
+static inline int sc_fxsave_user(struct i387_fxsave_struct __user *fx)
 {
 	void *buf;
 	int size, off;
@@ -255,20 +255,20 @@ static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
 	cfg.op = SC_DATA_EXCHG_MOV;
 	ret = sc_guest_exchange_data(&cfg);
 	if (ret == -EFAULT) {
-		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 	}
 
 	kfree(buf);
 	return ret;
 }
-#else
+#endif
 
-static inline int fsave_user(struct i387_fsave_struct __user *fx)
+static inline int orig_fsave_user(struct i387_fsave_struct __user *fx)
 {
 	return user_insn(fnsave %[fx]; fwait,  [fx] "=m" (*fx), "m" (*fx));
 }
 
-static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
+static inline int orig_fxsave_user(struct i387_fxsave_struct __user *fx)
 {
 	if (config_enabled(CONFIG_X86_32))
 		return user_insn(fxsave %[fx], [fx] "=m" (*fx), "m" (*fx));
@@ -278,7 +278,24 @@ static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
 	/* See comment in fpu_fxsave() below. */
 	return user_insn(rex64/fxsave (%[fx]), "=m" (*fx), [fx] "R" (fx));
 }
+
+static inline int fsave_user(struct i387_fsave_struct __user *fx)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc_fsave_user(fx);
 #endif
+		return orig_fsave_user(fx);
+}
+
+static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc_fxsave_user(fx);
+#endif
+		return orig_fxsave_user(fx);
+}
 
 static inline int fxrstor_checking(struct i387_fxsave_struct *fx)
 {
@@ -293,7 +310,7 @@ static inline int fxrstor_checking(struct i387_fxsave_struct *fx)
 }
 
 #ifdef CONFIG_SC_GUEST
-static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
+static inline int sc_fxrstor_user(struct i387_fxsave_struct __user *fx)
 {
 	void *buf;
 	int size, off;
@@ -315,7 +332,7 @@ static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
 	ret = sc_guest_exchange_data(&cfg);
 	if (ret == -EFAULT) {
 		kfree(buf);
-		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 		return ret;
 	}
 
@@ -330,8 +347,8 @@ static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
 	kfree(buf);
 	return ret;
 }
-#else
-static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
+#endif
+static inline int orig_fxrstor_user(struct i387_fxsave_struct __user *fx)
 {
 	if (config_enabled(CONFIG_X86_32))
 		return user_insn(fxrstor %[fx], "=m" (*fx), [fx] "m" (*fx));
@@ -342,7 +359,16 @@ static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
 	return user_insn(rex64/fxrstor (%[fx]), "=m" (*fx), [fx] "R" (fx),
 			  "m" (*fx));
 }
+
+static inline int fxrstor_user(struct i387_fxsave_struct __user *fx)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc_fxrstor_user(fx);
 #endif
+
+	return orig_fxrstor_user(fx);
+}
 
 static inline int frstor_checking(struct i387_fsave_struct *fx)
 {
@@ -350,7 +376,7 @@ static inline int frstor_checking(struct i387_fsave_struct *fx)
 }
 
 #ifdef CONFIG_SC_GUEST
-static inline int frstor_user(struct i387_fsave_struct __user *fx)
+static inline int sc_frstor_user(struct i387_fsave_struct __user *fx)
 {
 	void *buf;
 	int size, off;
@@ -372,7 +398,7 @@ static inline int frstor_user(struct i387_fsave_struct __user *fx)
 	ret = sc_guest_exchange_data(&cfg);
 	if (ret == -EFAULT) {
 		kfree(buf);
-		printk(KERN_ERR "### sc_guest_exchange_data failed (%s:%d) ---\n",__func__,__LINE__);
+		printk(KERN_ERR "sc_guest_exchange_data failed (%s:%d) -\n",__func__,__LINE__);
 		return ret;
 	}
 
@@ -380,12 +406,21 @@ static inline int frstor_user(struct i387_fsave_struct __user *fx)
 	kfree(buf);
 	return ret;
 }
-#else
-static inline int frstor_user(struct i387_fsave_struct __user *fx)
+#endif
+static inline int orig_frstor_user(struct i387_fsave_struct __user *fx)
 {
 	return user_insn(frstor %[fx], "=m" (*fx), [fx] "m" (*fx));
 }
+
+static inline int frstor_user(struct i387_fsave_struct __user *fx)
+{
+#ifdef CONFIG_SC_GUEST
+	if (sc_guest_is_in_sc())
+		return sc_frstor_user(fx);
 #endif
+
+	return orig_frstor_user(fx);
+}
 
 static inline void fpu_fxsave(struct fpu *fpu)
 {

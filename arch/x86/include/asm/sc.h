@@ -205,7 +205,8 @@ int sc_host_emulate(struct kvm_vcpu *vcpu, gpa_t gpa, int type);
 #endif
 
 #ifdef CONFIG_SC_GUEST
-bool is_sc(struct task_struct *task);
+/* check if current process in in secure container */
+bool sc_guest_is_in_sc(void);
 void sc_guest_check_exec_env(const char __user *str);
 phys_addr_t uvirt_to_phys(const volatile void *addr, int write);
 int sc_guest_exchange_data(struct data_ex_cfg *cfg);
