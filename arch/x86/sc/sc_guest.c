@@ -44,24 +44,6 @@ static int __init sc_guest_disable(char *str)
 }
 __setup("disable_sc", sc_guest_disable);
 
-static int sc_send_vmcall(int id, int ops, void *param1, void *param2)
-{
-	unsigned long rax = id;
-	unsigned long rbx = ops;
-	unsigned long rcx = (unsigned long)param1;
-	unsigned long rdx = (unsigned long)param2;
-	int ret = 0;
-
-	smp_mb();
-	asm volatile ("vmcall"
-			: "=a" (rax),  "=b" (rbx), "=c" (rcx), "=d" (rdx)
-			: "0"  (rax),  "1"  (rbx), "2"  (rcx), "3"  (rdx));
-	ret = (int)rax;
-	smp_mb();
-
-	return ret;
-}
-
 bool sc_guest_is_in_sc(void)
 {
 	return current->ept_viewid > 0;
@@ -130,7 +112,7 @@ static phys_addr_t uvirt_to_phys(const volatile void *addr, int write, struct pa
 
 int sc_guest_exchange_data(struct data_ex_cfg *cfg)
 {
-	return sc_send_vmcall(KVM_HC_SC, HC_DATA_EXCHANGE,(void*)__pa(cfg), (void*)sizeof(struct data_ex_cfg));
+	return kvm_hypercall3(KVM_HC_SC, HC_DATA_EXCHANGE,(void*)__pa(cfg), (void*)sizeof(struct data_ex_cfg));
 }
 EXPORT_SYMBOL_GPL(sc_guest_exchange_data);
 
@@ -337,7 +319,7 @@ int sc_guest_free_pages(struct page *page, int numpages)
 
 	cfg.start_gfn = page_to_pfn(page) ;
 	cfg.numpages = numpages;
-	ret = sc_send_vmcall(KVM_HC_SC, HC_SET_FREED_PAGE,(void*)__pa(&cfg),
+	ret = kvm_hypercall3(KVM_HC_SC, HC_SET_FREED_PAGE,(void*)__pa(&cfg),
 			(void*)sizeof(struct free_page_cfg));
 
 	return ret;
@@ -350,7 +332,7 @@ int sc_guest_share_page(struct page *page)
 	int ret = 0;
 
 	gfn = page_to_pfn(page) ;
-	ret = sc_send_vmcall(KVM_HC_SC, HC_SET_SHARED_PAGE,(void*)__pa(&gfn),
+	ret = kvm_hypercall3(KVM_HC_SC, HC_SET_SHARED_PAGE,(void*)__pa(&gfn),
 			(void*)sizeof(uint64_t));
 
 	return ret;
@@ -384,7 +366,7 @@ int sc_guest_create_view(void)
 	printk(KERN_INFO "SC_GUEST: create view with first pfn 0x%lx, from ip 0x%lx\n",
 			(unsigned long)cfg.first_pfn, regs->ip);
 
-	ret = sc_send_vmcall(KVM_HC_SC, HC_CREATE_VIEW, (void *)__pa(&cfg), (void *)sizeof(struct view_cfg));
+	ret = kvm_hypercall3(KVM_HC_SC, HC_CREATE_VIEW, (void *)__pa(&cfg), (void *)sizeof(struct view_cfg));
 
 	put_page(page);
 	return ret;
@@ -393,7 +375,7 @@ EXPORT_SYMBOL_GPL(sc_guest_create_view);
 
 static int _sc_guest_init(struct sc_cfg *cfg)
 {
-	return sc_send_vmcall(KVM_HC_SC, HC_INIT_SC, (void *)__pa(cfg), (void *)sizeof(struct sc_cfg));
+	return kvm_hypercall3(KVM_HC_SC, HC_INIT_SC, (void *)__pa(cfg), (void *)sizeof(struct sc_cfg));
 }
 
 #if defined(CONFIG_X86_64)
