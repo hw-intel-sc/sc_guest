@@ -208,7 +208,6 @@ int sc_host_emulate(struct kvm_vcpu *vcpu, gpa_t gpa, int type);
 /* check if current process in in secure container */
 bool sc_guest_is_in_sc(void);
 void sc_guest_check_exec_env(const char __user *str);
-phys_addr_t uvirt_to_phys(const volatile void *addr, int write);
 int sc_guest_exchange_data(struct data_ex_cfg *cfg);
 int sc_guest_create_view(void);
 int sc_guest_free_pages(struct page *page, int numpages);
