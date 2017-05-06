@@ -53,15 +53,24 @@ EXPORT_SYMBOL_GPL(sc_guest_is_in_sc);
 static bool enableSC = 0;
 static uint8_t enable_cluster = 0;
 static uint32_t cluster_id = 0;
-void sc_guest_check_exec_env(const char __user *str)
+void sc_guest_check_exec_env(const char __user *user, size_t len)
 {
 	char *sc_str = "enableSC", *cluster_str = "enableCluster";
+	char *str;
 
 	if (!enable_sc)
 		return;
 
+	str = kmalloc(len, GFP_KERNEL);
+	/* No more memory, if we plan to capture any errors , it should be ERR_PTR(-ENOMEM) */
+	if (!str)
+		return;
+
+	copy_from_user(str, user, len);
+
 	if (strncmp(str, sc_str, 8) == 0) {
 		enableSC = true;
+		kfree(str);
 		return;
 	}
 
@@ -77,8 +86,8 @@ void sc_guest_check_exec_env(const char __user *str)
 						pid, tsk->ept_viewid);
 			}
 		}
-
 	}
+	kfree(str);
 }
 EXPORT_SYMBOL_GPL(sc_guest_check_exec_env);
 
